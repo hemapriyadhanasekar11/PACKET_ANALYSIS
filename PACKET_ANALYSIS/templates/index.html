@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Packet Analyzer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+    <div class="header">
+        <h1>📡 Network <span>Packet Analyzer</span></h1>
+        <p class="subtitle"><span class="live"></span> Live Monitoring - Auto Refresh Every 2 Seconds</p>
+    </div>
+
+    <!-- Top 5 Cards - Photo la irukura maari -->
+    <div class="cards">
+        <div class="card"><small>Total Packets</small><h2 class="total" id="total">0</h2></div>
+        <div class="card"><small>⬇ Incoming</small><h2 class="in" id="incoming">0</h2></div>
+        <div class="card"><small>⬆ Outgoing</small><h2 class="out" id="outgoing">0</h2></div>
+        <div class="card"><small>🏠 Local</small><h2 class="local" id="local">0</h2></div>
+        <div class="card"><small>💾 Total Bytes</small><h2 class="bytes" id="bytes">0</h2></div>
+    </div>
+
+    <!-- Graph + Donut - Photo la irukura maari -->
+    <div class="charts-row">
+        <div class="chart-box">
+            <h3>📈 Network Traffic - Live Graph</h3>
+            <canvas id="trafficChart"></canvas>
+        </div>
+        <div class="donut-box">
+            <h3>Protocol Distribution</h3>
+            <canvas id="protocolChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Packet Table -->
+    <div class="table-box">
+        <div class="table-head">
+            <h3>Recent Packets</h3>
+            <span id="count">0 packets</span>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Source IP</th>
+                    <th>Destination IP</th>
+                    <th>Protocol</th>
+                    <th>Size</th>
+                    <th>Direction</th>
+                </tr>
+            </thead>
+            <tbody id="packetTable">
+                <tr><td colspan="6" style="text-align:center;">Waiting for packets... Browser la YouTube / Google open pannu</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+<script>
+    // Line Graph
+    let trafficChart = new Chart(document.getElementById('trafficChart'), {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Packets',
+                data: [],
+                borderColor: '#22d3ee',
+                backgroundColor: 'rgba(34, 211, 238, 0.2)',
+                fill: true,
+                tension: 0.4,
+                borderWidth: 2.5
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { labels: { color: 'white', font: { style: 'italic' } } } },
+            scales: {
+                x: { ticks: { color: 'white', font: { style: 'italic' } }, grid: { color: 'rgba(255,255,255,0.1)' } },
+                y: { ticks: { color: 'white', font: { style: 'italic' } }, grid: { color: 'rgba(255,255,255,0.1)' } }
+            }
+        }
+    });
+
+    // Donut Chart
+    let protocolChart = new Chart(document.getElementById('protocolChart'), {
+        type: 'doughnut',
+        data: {
+            labels: ['TCP', 'UDP', 'ICMP', 'OTHER'],
+            datasets: [{
+                data: [0, 0, 0, 0],
+                backgroundColor: ['#38bdf8', '#22c55e', '#f97316', '#a78bfa'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            cutout: '65%',
+            plugins: { legend: { position: 'bottom', labels: { color: 'white', font: { style: 'italic' } } } }
+        }
+    });
+
+    let history = [];
+    let labels = [];
+
+    async function loadData() {
+        try {
+            let res = await fetch('/api/stats');
+            let data = await res.json();
+
+            document.getElementById('total').innerText = data.stats.total;
+            document.getElementById('incoming').innerText = data.stats.incoming;
+            document.getElementById('outgoing').innerText = data.stats.outgoing;
+            document.getElementById('local').innerText = data.stats.local;
+            document.getElementById('bytes').innerText = data.stats.bytes.toLocaleString();
+            document.getElementById('count').innerText = data.packets.length + ' packets';
+
+            // Graph update
+            history.push(data.stats.total);
+            labels.push(new Date().toLocaleTimeString());
+            if (history.length > 15) { history.shift(); labels.shift(); }
+            trafficChart.data.labels = labels;
+            trafficChart.data.datasets[0].data = history;
+            trafficChart.update();
+
+            // Donut update
+            let tcp = 0, udp = 0, icmp = 0, other = 0;
+            data.packets.forEach(p => {
+                if (p.protocol === 'TCP') tcp++;
+                else if (p.protocol === 'UDP') udp++;
+                else if (p.protocol === 'ICMP') icmp++;
+                else other++;
+            });
+            protocolChart.data.datasets[0].data = [tcp, udp, icmp, other];
+            protocolChart.update();
+
+            // Table update
+            let html = '';
+            if (data.packets.length === 0) {
+                html = '<tr><td colspan="6" style="text-align:center;">Waiting for packets...</td></tr>';
+            } else {
+                data.packets.forEach(p => {
+                    html += `<tr>
+                        <td>${p.time}</td>
+                        <td>${p.source}</td>
+                        <td>${p.destination}</td>
+                        <td><span class="badge ${p.protocol}">${p.protocol}</span></td>
+                        <td>${p.size} bytes</td>
+                        <td class="${p.direction}">${p.direction}</td>
+                    </tr>`;
+                });
+            }
+            document.getElementById('packetTable').innerHTML = html;
+        } catch (e) { console.log(e); }
+    }
+    loadData();
+    setInterval(loadData, 2000);
+</script>
+</body>
+</html>
